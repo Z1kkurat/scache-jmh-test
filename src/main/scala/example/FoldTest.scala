@@ -2,6 +2,7 @@ package example
 
 import cats.effect.IO
 import cats.effect.unsafe.IORuntime
+import cats.kernel.CommutativeMonoid
 import cats.syntax.all._
 import com.evolutiongaming.scache.Cache
 import org.openjdk.jmh.annotations._
@@ -65,6 +66,31 @@ class FoldTest {
           }
       }
     }
+
+    io.unsafeRunSync()(state.runtime)
+  }
+
+  @Benchmark
+  @BenchmarkMode(Array(Mode.SampleTime))
+  def measureFoldMap(state: TestState): Unit = {
+    val cache = state.cache._1
+
+    implicit val intCommutativeMonoid: CommutativeMonoid[Option[Int]] = new CommutativeMonoid[Option[Int]] {
+      override def empty: Option[Int] = None
+
+      override def combine(x: Option[Int], y: Option[Int]): Option[Int] = x match {
+        case Some(xValue) => y match {
+          case Some(yValue) => Some(xValue.min(yValue))
+          case None => Some(xValue)
+        }
+        case None => y
+      }
+    }
+
+    val io: IO[Option[Int]] = cache.foldMap {
+      case (_, Left(_)) => IO.pure(none[Int])
+      case (_, Right(value)) => value
+    }(intCommutativeMonoid)
 
     io.unsafeRunSync()(state.runtime)
   }
